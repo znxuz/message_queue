@@ -1,3 +1,5 @@
+[![wakatime](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e.svg)](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e)
+
 # manpage notes
 
 - POSIX-confirm name `std::string_view` sanity check:
@@ -11,19 +13,14 @@
 	- `mq_msgsize`: size (bytes) of each msg; **must be non-zero**
 	-  `mq_curmsgs`: # of msgs currently in the queue
 - `mq_open()`:
-	- statically check `oflag` which is ORed:
-		- send(`O_RDONLY`)/receive(`O_WRONLY`)/both(`O_RDWR`) -> TODO as enum?
-		- [ ] set `O_CLOSEXEC`
-		- [ ] set `O_NONBLOCK` depending on config
-		- if `O_CREAT`, check:
-			- [ ] pair with `O_EXCL` and `mode` for perms
-			- `mq_attr`:
-				- `mq_flags`: ignored
-				- `mq_maxmsg`: derive from template analog to `std::array`
-				- `mq_msgsize`: derive from template: [ ] `sizeof` safe?
-				- `mq_curmsgs`: ignored
-	- [ ] privatize mq file descriptor
-	- [ ] respect `errno` and  make them human-readable: -> `man mq_open:ERRORS`
+	- always bidirectional based on the API
+	- attach if exists, otherwise create -> no `O_CLOEXEC`
+	- `mq_attr`:
+		- `mq_flags`: ignored
+		- `mq_maxmsg`: derive from template analog to `std::array`
+		- `mq_msgsize`: derive from template: [ ] `sizeof` safe?
+		- `mq_curmsgs`: ignored
+	- [ ] respect `errno` and make them human-readable: -> `man mq_open:ERRORS`
 	- return `(mqd_t)-1` on error -> TODO exceptions?
 - `mq_send()`:
 	- [ ] overloads with `const T&`, `T&&`, maybe analog `emplace_back()` too?
