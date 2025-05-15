@@ -30,6 +30,10 @@ recompile:
 run: $(NAME)
 	@./$(NAME)
 
+rerun:
+	$(MAKE) clean
+	$(MAKE) run
+
 debug: CFLAGS += -g -DDEBUG=1 -D_GLIBCXX_DEBUG=1
 debug: fclean all
 
