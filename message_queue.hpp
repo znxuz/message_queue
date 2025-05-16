@@ -80,7 +80,24 @@ class MessageQueue {
   explicit MessageQueue(std::string_view name, MqType type)
       : MessageQueue(name, NON_BLOCKING, type) {}
 
-  ~MessageQueue() { assert(mq_close(mqdes_) == 0 && errno == 0); }
+  MessageQueue(MessageQueue&& rhs) noexcept {
+    using std::swap;
+    *this = std::move(rhs);
+  }
+
+  MessageQueue& operator=(MessageQueue&& rhs) noexcept {
+    using std::swap;
+    swap(attr_, rhs.attr_);
+    swap(name_, rhs.name_);
+    swap(type_, rhs.type_);
+    swap(mqdes_, rhs.mqdes_);
+
+    return *this;
+  }
+
+  ~MessageQueue() {
+    if (mqdes_ != -1) assert(mq_close(mqdes_) == 0 && errno == 0);
+  }
 
   auto size() const -> size_t {
     update();
@@ -131,7 +148,7 @@ class MessageQueue {
   mutable mq_attr attr_{};
   std::string_view name_;
   MqType type_;
-  mqd_t mqdes_;
+  mqd_t mqdes_{-1};
 
   auto update() const -> void { mq_getattr(mqdes_, &attr_); }
 
