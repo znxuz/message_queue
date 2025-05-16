@@ -26,7 +26,7 @@
 	- [ ] overloads with `const T&`, `T&&`, maybe analog `emplace_back()` too?
 	- [ ] overloads with optional timeout -> `std::chrono`
 	- [ ] `std::expected` on empty queue in non-blocking mode with `EAGAIN`
-	- `mq_send()` takes `const char*`: `std::bit_cast` over `reinterpret_cast`?
+	- `mq_send()` takes `const char*`: `std::bit_cast`
 	- priority:
 		- range from `0(low)` to `$(getconf MQ_PRIO_MAX)` or
 		  `sysconf(_SC_MQ_PRIO_MAX)-1(high)`: 32768 on Linux, 31 with POSIX.1
@@ -35,7 +35,6 @@
 	- [ ] respect `errno` -> `man mq_send:ERRORS`
 - `mq_receive()`:
 	- [ ] should return (msg, #) -> `std::expected<std::pair<...>, E>`
-	- use a static buffer (or local buffer for thread-safety?)
 	- RVO via `std::bit_cast` on return?
 	- optional timeout: TODO maybe as optional template param for non-blocking
 	  behavior and ` if constexpr ...` for both send and receive

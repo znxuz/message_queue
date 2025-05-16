@@ -16,18 +16,18 @@ int main() {
     assert(!queue1.is_empty());
     assert(queue1.size() == 1);
 
-    // auto queue2 = MessageQueue{ queue_name };
-    // assert(!queue2.is_empty());
-    // assert(queue2.size() == 1);
-    //
-    // const auto received_message = queue2.receive();
-    // assert(received_message.has_value());
-    // assert(queue2.is_empty());
-    // assert(queue2.size() == 0);
-    // const auto& [contents, priority] = received_message.value();
-    // assert(contents == "Hello, world!");
-    // assert(priority == MessageQueue::Priority{ 3 });
-    //
+    auto queue2 = MessageQueue{ queue_name };
+    assert(!queue2.is_empty());
+    assert(queue2.size() == 1);
+
+    const auto received_message = queue2.receive();
+    assert(received_message.has_value());
+    assert(queue2.is_empty());
+    assert(queue2.size() == 0);
+    const auto& [contents, priority] = received_message.value();
+    assert(contents == "Hello, world!");
+    assert(priority == MessageQueue::Priority{ 3 });
+
     // Additional task: Call the function `use_queue()` and pass the `queue2` object.
     // use_queue(std::move(queue2)); // <- remove me!
 
