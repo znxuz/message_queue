@@ -146,8 +146,8 @@ class MessageQueue {
 
  private:
   mutable mq_attr attr_{};
-  std::string_view name_;
-  MqType type_;
+  std::string_view name_{};
+  MqType type_{};
   mqd_t mqdes_{-1};
 
   auto update() const -> void { mq_getattr(mqdes_, &attr_); }
