@@ -2,22 +2,20 @@
 
 #include <fcntl.h>
 #include <mqueue.h>
+#include <unistd.h>
 
 #include <cassert>
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <expected>
-#include <format>
-#include <iostream>
 #include <print>
 #include <span>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 
 namespace message_queue {
 
@@ -28,18 +26,18 @@ enum struct MqType {
 };
 
 enum struct MqMode { BLOCKING = 0, NON_BLOCKING = O_NONBLOCK };
+
 using MqError = int;
-
-using namespace std::literals;
-
-using enum MqMode;
-using enum MqType;
-
-inline constexpr size_t DEFAULT_PERM = 0640;
 
 // TODO: move to _detail ns
 template <typename T>
 concept Byte = sizeof(T) == 1 && std::is_integral_v<T>;
+
+inline constexpr size_t DEFAULT_PERM = 0640;
+
+// TODO: rm after develop
+using enum MqMode;
+using enum MqType;
 
 class MessageQueue {
  public:
@@ -65,7 +63,7 @@ class MessageQueue {
 
   explicit MessageQueue(std::string_view name, MqMode mode = NON_BLOCKING,
                         MqType type = BIDIRECTIONAL)
-      : name_{name},
+      : name_{name_sanity_check(name)},
         type_{type},
         mqdes_{mq_open(
             name_.data(),
@@ -171,11 +169,13 @@ class MessageQueue {
     return {};
   }
 
-  static auto name_sanity_check(std::string_view name) {
-    // TODO:
-    // - *only* one slash & must be at the start  -> resolves EACCES
-    // - max. length to `getconf NAME_MAX /`      -> resolves EINVAL
-    // - must be more than a single slash         -> resolves ENOENT
+  static auto name_sanity_check(std::string_view name) -> std::string_view {
+    if (!name.starts_with('/') ||
+        name.find_first_of('/') != name.find_last_of('/') || name.size() < 1 ||
+        name.size() >= static_cast<size_t>(pathconf("/", _PC_NAME_MAX)))
+      throw std::invalid_argument("invalid mq name");
+
+    return name;
   }
 
   auto log_error(Operation op) const -> MqError {
@@ -210,7 +210,7 @@ class MessageQueue {
                  {{EBADF, "invalid mq fd"},
                   {EINVAL, "mq_flags contains more than O_NONBLOCK"}}}};
 
-    std::println(std::cerr, "operation {} with errno {}: {}",
+    std::println(stderr, "operation {} with errno {}: {}",
                  std::to_underlying(op), errno, err_map.at(op).at(errno));
     return errno;
   }
