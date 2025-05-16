@@ -4,10 +4,10 @@
 
 static constexpr auto queue_name = "/my_queue";
 
-// void use_queue(MessageQueue queue) {
-//     queue.send("Test", MessageQueue::Priority{ 2 });
-//     assert(queue.receive().value().contents == "Test");
-// }
+void use_queue(MessageQueue queue) {
+    queue.send("Test", MessageQueue::Priority{ 2 });
+    assert(queue.receive().value().contents == "Test");
+}
 
 int main() {
     auto queue1 = MessageQueue{ queue_name };
@@ -29,9 +29,9 @@ int main() {
     assert(priority == MessageQueue::Priority{ 3 });
 
     // Additional task: Call the function `use_queue()` and pass the `queue2` object.
-    // use_queue(std::move(queue2)); // <- remove me!
+    use_queue(std::move(queue2)); // <- remove me!
 
     // Additional task: Make the following line compile.
-    // std::cout << priority << '\n';
-    // std::println("{}", priority);
+    std::cout << priority << '\n';
+    std::println("{}", priority);
 }

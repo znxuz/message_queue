@@ -50,11 +50,19 @@ class MessageQueue {
     constexpr Priority() = default;
     constexpr Priority(unsigned int priority) : priority_{priority} {}
     constexpr operator unsigned int() { return priority_; }
+    constexpr operator unsigned int() const { return priority_; }
     constexpr auto operator<=>(const Priority&) const = default;
 
    private:
     friend class MessageQueue;
     unsigned int priority_{DEFAULT};
+  };
+
+  struct Message {
+    std::string contents;
+    Priority priority;
+
+    friend class MessageQueue;
   };
 
   explicit MessageQueue(std::string_view name, MqMode mode = NON_BLOCKING,
@@ -82,17 +90,20 @@ class MessageQueue {
   auto is_empty() const -> size_t { return !size(); }
 
   template <Byte B>
-  auto send(std::span<const B> msg) -> std::expected<std::monostate, MqError> {
+  auto send(std::span<const B> msg, Priority priority = Priority::DEFAULT)
+      -> std::expected<std::monostate, MqError> {
     if (mq_send(mqdes_, std::bit_cast<const char*>(msg.data()), msg.size(),
-                Priority::DEFAULT))
+                priority))
       return std::unexpected{error_handler()};
     return std::monostate{};
   }
 
   // for null-terminated arrays
-  auto send(const Byte auto* msg) { send(std::span(msg, strlen(msg))); }
+  auto send(const Byte auto* msg, Priority priority = Priority::DEFAULT) {
+    send(std::span(msg, strlen(msg)), priority);
+  }
 
-  auto receive() -> std::expected<std::pair<std::string, Priority>, MqError> {
+  auto receive() -> std::expected<Message, MqError> {
     Priority priority;
 
     auto max_msg_size = static_cast<size_t>(attr_.mq_msgsize);
@@ -111,7 +122,7 @@ class MessageQueue {
       return std::unexpected{error_handler()};
     }
 
-    return std::make_pair(std::move(msg), priority);
+    return Message{std::move(msg), priority};
   }
 
   auto type() const -> MqType { return type_; }
