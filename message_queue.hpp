@@ -8,20 +8,18 @@
 #include <cstring>
 #include <expected>
 #include <format>
+#include <iostream>
 #include <print>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 
 namespace message_queue {
-
-enum struct MqError {
-  FULL,
-  EMPTY,
-};
 
 enum struct MqType {
   RECEIVER = O_RDONLY,
@@ -30,10 +28,10 @@ enum struct MqType {
 };
 
 enum struct MqMode { BLOCKING = 0, NON_BLOCKING = O_NONBLOCK };
+using MqError = int;
 
 using namespace std::literals;
 
-using enum MqError;
 using enum MqMode;
 using enum MqType;
 
@@ -73,7 +71,10 @@ class MessageQueue {
             name_.data(),
             O_CREAT | std::to_underlying(type_) | std::to_underlying(mode),
             DEFAULT_PERM, nullptr)} {
-    if (mqdes_ == -1) error_handler();
+    if (mqdes_ == -1) {
+      log_error(Operation::Open);
+      throw std::invalid_argument("failed to create a message queue");
+    }
     assert(mqdes_ && errno == 0);
   }
 
@@ -100,8 +101,11 @@ class MessageQueue {
   }
 
   auto size() const -> size_t {
-    update();
-    return static_cast<size_t>(attr_.mq_curmsgs);
+    return update()
+        .and_then([this](std::monostate) -> std::expected<size_t, MqError> {
+          return static_cast<size_t>(attr_.mq_curmsgs);
+        })
+        .value();  // ok to crash?
   }
 
   auto is_empty() const -> size_t { return !size(); }
@@ -111,23 +115,27 @@ class MessageQueue {
       -> std::expected<std::monostate, MqError> {
     if (mq_send(mqdes_, std::bit_cast<const char*>(msg.data()), msg.size(),
                 priority))
-      return std::unexpected{error_handler()};
-    return std::monostate{};
+      return std::unexpected{log_error(Operation::Send)};
+    return {};
   }
 
   // for null-terminated arrays
   auto send(const Byte auto* msg, Priority priority = Priority::DEFAULT) {
-    send(std::span(msg, strlen(msg)), priority);
+    return send(std::span(msg, strlen(msg)), priority);
   }
 
   auto receive() -> std::expected<Message, MqError> {
     Priority priority;
 
-    auto max_msg_size = static_cast<size_t>(attr_.mq_msgsize);
+    auto max_msg_size =
+        update()
+            .and_then([this](std::monostate) -> std::expected<size_t, MqError> {
+              return static_cast<size_t>(attr_.mq_msgsize);
+            })
+            .value();
     auto msg = std::string{};
-    msg.resize(
-        max_msg_size);  // reserve() here is UB:
-                        // data() ptr valid range: (data(), data() + size]
+    msg.resize(max_msg_size);  // reserve() here is UB:
+                               // data ptr valid range: (data(), data() + size]
     if (auto ret =
             mq_receive(mqdes_, msg.data(), max_msg_size, &priority.priority_);
         ret != -1) {
@@ -135,26 +143,76 @@ class MessageQueue {
       msg.resize(size);
       msg.shrink_to_fit();
       assert(msg.size() == size);
-    } else {
-      return std::unexpected{error_handler()};
+      return Message{std::move(msg), priority};
     }
-
-    return Message{std::move(msg), priority};
+    return std::unexpected{log_error(Operation::Receive)};
   }
 
   auto type() const -> MqType { return type_; }
 
+  auto is_blocking() const -> bool {
+    return update()
+        .and_then([this](std::monostate) -> std::expected<bool, MqError> {
+          return !(attr_.mq_flags | O_NONBLOCK);
+        })
+        .value();
+  }
+
  private:
+  enum struct Operation { Open, Close, Send, Receive, GetAttr };
   mutable mq_attr attr_{};
   std::string_view name_{};
   MqType type_{};
   mqd_t mqdes_{-1};
 
-  auto update() const -> void { mq_getattr(mqdes_, &attr_); }
+  auto update() const -> std::expected<std::monostate, MqError> {
+    if (mq_getattr(mqdes_, &attr_))
+      return std::unexpected{log_error(Operation::GetAttr)};
+    return {};
+  }
 
-  auto error_handler() -> MqError {
-    // TODO: human readable error output based on caller & errno
-    throw std::invalid_argument(std::format("errno {}: TODO", errno));
+  static auto name_sanity_check(std::string_view name) {
+    // TODO:
+    // - *only* one slash & must be at the start  -> resolves EACCES
+    // - max. length to `getconf NAME_MAX /`      -> resolves EINVAL
+    // - must be more than a single slash         -> resolves ENOENT
+  }
+
+  auto log_error(Operation op) const -> MqError {
+    using enum Operation;
+    // TODO: std::vector/array based instead of umap
+    static const std::unordered_map<Operation,
+                                    std::unordered_map<int, std::string_view>>
+        err_map{{Open,
+                 {{EACCES, "insufficient permission"},
+                  {EEXIST, "queue with the same name already exist"},
+                  {EMFILE, "per-process limit on the number of fds is reached"},
+                  {ENFILE, "system-wide limit on the number of fds is reached"},
+                  {ENOENT, "queue doesn't exist"},
+                  {ENOMEM, "insufficient memory"},
+                  {ENOSPC, "insufficient space"}}},
+                {Close, {{EBADF, "invalid mq fd"}}},
+                {Send,
+                 {{EAGAIN, "queue is full"},
+                  {EBADF, "invalid mq fd"},
+                  {EINTR, "interrupted by a single handler"},
+                  {EINVAL, "TODO: not implemented"},
+                  {EMSGSIZE, "contained message length greater than max. size"},
+                  {ETIMEDOUT, "TODO: not implemented"}}},
+                {Receive,
+                 {{EAGAIN, "queue is empty"},
+                  {EBADF, "invalid mq fd"},
+                  {EINTR, "interrupted by a single handler"},
+                  {EINVAL, "TODO: time-based api not implemented"},
+                  {EMSGSIZE, "given message length less than max. size"},
+                  {ETIMEDOUT, "TODO: time-based api not implemented"}}},
+                {GetAttr,
+                 {{EBADF, "invalid mq fd"},
+                  {EINVAL, "mq_flags contains more than O_NONBLOCK"}}}};
+
+    std::println(std::cerr, "operation {} with errno {}: {}",
+                 std::to_underlying(op), errno, err_map.at(op).at(errno));
+    return errno;
   }
 };
 };  // namespace message_queue
