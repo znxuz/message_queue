@@ -1,5 +1,10 @@
 [![wakatime](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e.svg)](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e)
 
+# todos
+
+- factory method returning `std::expected`
+- time-based api
+
 # manpage notes
 
 - POSIX-confirm name `std::string_view` sanity check:

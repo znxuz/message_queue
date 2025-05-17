@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <expected>
+#include <iterator>
 #include <print>
 #include <span>
 #include <stdexcept>
@@ -32,6 +33,15 @@ using MqError = int;
 
 template <typename T>
 concept Byte = sizeof(T) == 1 && std::is_integral_v<T>;
+
+template <typename C>
+concept ByteContainer = requires(C c) {
+  requires Byte<std::decay_t<decltype(c[0])>>;
+  c.data();
+  c.size();
+  { c.begin() } -> std::contiguous_iterator;
+  { c.end() } -> std::contiguous_iterator;
+};
 
 inline constexpr size_t DEFAULT_PERM = 0640;
 
@@ -101,9 +111,8 @@ class MessageQueue {
 
   auto is_empty() const -> size_t { return !size(); }
 
-  // TODO container template
-  template <Byte B>
-  auto send(std::span<const B> msg, Priority priority = Priority::DEFAULT)
+  template <ByteContainer C>
+  auto send(const C& msg, Priority priority = Priority::DEFAULT)
       -> std::expected<std::monostate, MqError> {
     if (mq_send(mqdes_, std::bit_cast<const char*>(msg.data()), msg.size(),
                 priority))
@@ -207,7 +216,7 @@ class MessageQueue {
 
     std::println(stderr, "operation {} with errno {}: {}",
                  std::to_underlying(op), errno, err_map.at(op).at(errno));
-    return errno;
+    return std::exchange(errno, 0);
   }
 };
 };  // namespace message_queue
