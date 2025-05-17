@@ -13,7 +13,7 @@ CFLAGS := -x $(LANG) -std=$(STD) $(WARNINGS) -O0 -I$(CURDIR)
 LIB :=
 SAN := -fsanitize=address,undefined
 
-src := $(shell find $(SRC_DIR) -type f -name "*.cpp")
+src := $(filter-out ./tests/tests.cpp, $(shell find $(SRC_DIR) -type f -name "*.cpp"))
 obj := $(addprefix $(BUILD_DIR)/, $(src:.cpp=.o))
 NAME := $(BUILD_DIR)/a.out
 

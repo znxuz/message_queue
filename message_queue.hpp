@@ -42,7 +42,6 @@ class MessageQueue {
     constexpr Priority() = default;
     constexpr Priority(unsigned int priority) : priority_{priority} {}
     constexpr operator unsigned int() const { return priority_; }
-    constexpr auto operator<=>(const Priority&) const = default;
 
    private:
     friend class MessageQueue;
@@ -167,7 +166,7 @@ class MessageQueue {
 
   static auto name_sanity_check(std::string_view name) -> std::string_view {
     if (!name.starts_with('/') ||
-        name.find_first_of('/') != name.find_last_of('/') || name.size() < 1 ||
+        name.find_first_of('/') != name.find_last_of('/') || name.size() == 1 ||
         name.size() + 1 >= static_cast<size_t>(pathconf("/", _PC_NAME_MAX)))
       throw std::invalid_argument("invalid mq name");
 
