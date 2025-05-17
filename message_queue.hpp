@@ -19,6 +19,7 @@
 
 namespace message_queue {
 
+// can be a template param
 enum struct MqType {
   RECEIVER = O_RDONLY,
   SENDER = O_WRONLY,
@@ -29,15 +30,10 @@ enum struct MqMode { BLOCKING = 0, NON_BLOCKING = O_NONBLOCK };
 
 using MqError = int;
 
-// TODO: move to _detail ns
 template <typename T>
 concept Byte = sizeof(T) == 1 && std::is_integral_v<T>;
 
 inline constexpr size_t DEFAULT_PERM = 0640;
-
-// TODO: rm after develop
-using enum MqMode;
-using enum MqType;
 
 class MessageQueue {
  public:
@@ -45,7 +41,6 @@ class MessageQueue {
     constexpr static inline unsigned int DEFAULT = 3;
     constexpr Priority() = default;
     constexpr Priority(unsigned int priority) : priority_{priority} {}
-    constexpr operator unsigned int() { return priority_; }
     constexpr operator unsigned int() const { return priority_; }
     constexpr auto operator<=>(const Priority&) const = default;
 
@@ -57,12 +52,11 @@ class MessageQueue {
   struct Message {
     std::string contents;
     Priority priority;
-
-    friend class MessageQueue;
   };
 
-  explicit MessageQueue(std::string_view name, MqMode mode = NON_BLOCKING,
-                        MqType type = BIDIRECTIONAL)
+  explicit MessageQueue(std::string_view name,
+                        MqMode mode = MqMode::NON_BLOCKING,
+                        MqType type = MqType::BIDIRECTIONAL)
       : name_{name_sanity_check(name)},
         type_{type},
         mqdes_{mq_open(
@@ -73,11 +67,11 @@ class MessageQueue {
       log_error(Operation::Open);
       throw std::invalid_argument("failed to create a message queue");
     }
-    assert(mqdes_ && errno == 0);
+    assert(mqdes_ && !errno);
   }
 
   explicit MessageQueue(std::string_view name, MqType type)
-      : MessageQueue(name, NON_BLOCKING, type) {}
+      : MessageQueue(name, MqMode::NON_BLOCKING, type) {}
 
   MessageQueue(MessageQueue&& rhs) noexcept {
     using std::swap;
@@ -95,11 +89,11 @@ class MessageQueue {
   }
 
   ~MessageQueue() {
-    if (mqdes_ != -1) assert(mq_close(mqdes_) == 0 && errno == 0);
+    if (mqdes_ != -1) assert(mq_close(mqdes_) == 0 && !errno);
   }
 
   auto size() const -> size_t {
-    return update()
+    return get_attr()
         .and_then([this](std::monostate) -> std::expected<size_t, MqError> {
           return static_cast<size_t>(attr_.mq_curmsgs);
         })
@@ -108,6 +102,7 @@ class MessageQueue {
 
   auto is_empty() const -> size_t { return !size(); }
 
+  // TODO container template
   template <Byte B>
   auto send(std::span<const B> msg, Priority priority = Priority::DEFAULT)
       -> std::expected<std::monostate, MqError> {
@@ -126,7 +121,7 @@ class MessageQueue {
     Priority priority;
 
     auto max_msg_size =
-        update()
+        get_attr()
             .and_then([this](std::monostate) -> std::expected<size_t, MqError> {
               return static_cast<size_t>(attr_.mq_msgsize);
             })
@@ -148,10 +143,11 @@ class MessageQueue {
 
   auto type() const -> MqType { return type_; }
 
-  auto is_blocking() const -> bool {
-    return update()
-        .and_then([this](std::monostate) -> std::expected<bool, MqError> {
-          return !(attr_.mq_flags | O_NONBLOCK);
+  auto mode() const -> MqMode {
+    return get_attr()
+        .and_then([this](std::monostate) -> std::expected<MqMode, MqError> {
+          return (attr_.mq_flags | O_NONBLOCK) ? MqMode::NON_BLOCKING
+                                               : MqMode::BLOCKING;
         })
         .value();
   }
@@ -163,7 +159,7 @@ class MessageQueue {
   MqType type_{};
   mqd_t mqdes_{-1};
 
-  auto update() const -> std::expected<std::monostate, MqError> {
+  auto get_attr() const -> std::expected<std::monostate, MqError> {
     if (mq_getattr(mqdes_, &attr_))
       return std::unexpected{log_error(Operation::GetAttr)};
     return {};
@@ -172,7 +168,7 @@ class MessageQueue {
   static auto name_sanity_check(std::string_view name) -> std::string_view {
     if (!name.starts_with('/') ||
         name.find_first_of('/') != name.find_last_of('/') || name.size() < 1 ||
-        name.size() >= static_cast<size_t>(pathconf("/", _PC_NAME_MAX)))
+        name.size() + 1 >= static_cast<size_t>(pathconf("/", _PC_NAME_MAX)))
       throw std::invalid_argument("invalid mq name");
 
     return name;
@@ -219,6 +215,7 @@ class MessageQueue {
 
 template <>
 struct std::formatter<message_queue::MessageQueue::Priority>
-    : std::formatter<unsigned int> {};
+    : std::formatter<std::decay_t<
+          decltype(message_queue::MessageQueue::Priority::DEFAULT)>> {};
 
 using namespace message_queue;  // if main.cpp is not to be modified

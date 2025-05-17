@@ -20,25 +20,24 @@
 		- `mq_maxmsg`: derive from template analog to `std::array`
 		- `mq_msgsize`: derive from template: [ ] `sizeof` safe?
 		- `mq_curmsgs`: ignored
-	- [ ] respect `errno` and make them human-readable: -> `man mq_open:ERRORS`
+	- [X] respect `errno` and make them human-readable: -> `man mq_open:ERRORS`
 	- return `(mqd_t)-1` on error -> TODO exceptions?
 - `mq_send()`:
 	- [ ] overloads with `const T&`, `T&&`, maybe analog `emplace_back()` too?
 	- [ ] overloads with optional timeout -> `std::chrono`
-	- [ ] `std::expected` on empty queue in non-blocking mode with `EAGAIN`
 	- `mq_send()` takes `const char*`: `std::bit_cast`
 	- priority:
 		- range from `0(low)` to `$(getconf MQ_PRIO_MAX)` or
 		  `sysconf(_SC_MQ_PRIO_MAX)-1(high)`: 32768 on Linux, 31 with POSIX.1
 		- [ ] as nested/inner class with bound checking
-		- [ ] overload `<<`, `>>` and also for `std::println()`
-	- [ ] respect `errno` -> `man mq_send:ERRORS`
+		- [X] serialize to `cout`: impl. conversion
+	- [X] respect `errno` -> `man mq_send:ERRORS`
 - `mq_receive()`:
-	- [ ] should return (msg, #) -> `std::expected<std::pair<...>, E>`
+	- [X] should return (msg, priority) -> `std::expected<std::pair<...>, E>`
 	- RVO via `std::bit_cast` on return?
 	- optional timeout: TODO maybe as optional template param for non-blocking
 	  behavior and ` if constexpr ...` for both send and receive
-	- [ ] respect `errno` -> `man mq_receive:ERRORS`
+	- [X] respect `errno` -> `man mq_receive:ERRORS`
 - `mq_notify()`: notify upon msg arrival on a **previously empty** queue:
 	- `SIGEV_NONE`: only register, no notification
 	- `SIGEV_SIGNAL`: sending the specified signal
@@ -60,6 +59,7 @@
 - [ ] test bidirectional
 - [ ] test non-padded/padded/polymorphic objects with inherited paddings
 - [ ] test with producer/consumer threads
+- [ ] test priority comparisons
 
 # unix tools
 

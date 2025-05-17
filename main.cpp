@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <string_view>
 #include "message_queue.hpp"
 
 static constexpr auto queue_name = "/my_queue";
