@@ -1,11 +1,16 @@
 #include <gtest/gtest.h>
+
 #include <cstdint>
+#include <fstream>
+#include <iostream>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 
 #include "../message_queue.hpp"
 
 using namespace message_queue;
+using namespace std::literals;
 
 using Priority = MessageQueue::Priority;
 
@@ -27,11 +32,27 @@ TEST_F(MessageQueueTest, Construction) {
   EXPECT_EQ(mq.mode(), MqMode::NON_BLOCKING);
 }
 
-TEST_F(MessageQueueTest, EmptyLogError) {
-  EXPECT_FALSE(mq.receive());
+TEST_F(MessageQueueTest, Attr) {
+  auto from_file = [](const std::string& filename) static {
+    std::ifstream file(filename);
+    size_t value;
+    file >> value;
+    return value;
+  };
+
+  auto mq_kernel_path = "/proc/sys/fs/mqueue"s;
+  EXPECT_EQ(mq.max_size(), from_file(mq_kernel_path + "/msg_default"s));
+  EXPECT_EQ(mq.max_msgsize(), from_file(mq_kernel_path + "/msgsize_default"s));
+  EXPECT_EQ(mq.mode(), MqMode::NON_BLOCKING);
 }
 
+TEST_F(MessageQueueTest, EmptyLogError) { EXPECT_FALSE(mq.receive()); }
+
 TEST_F(MessageQueueTest, SendLogFull) {
+  for (auto i : std::views::iota(0uz, mq.max_size()))
+    EXPECT_TRUE(mq.send(""sv));
+  EXPECT_FALSE(mq.send(""sv));
+  EXPECT_TRUE(mq.clear());
 }
 
 TEST_F(MessageQueueTest, SendRawPointer) {
@@ -44,14 +65,13 @@ TEST_F(MessageQueueTest, SendRawPointer) {
 }
 
 TEST_F(MessageQueueTest, SendContainer) {
-  using namespace std::literals;
   auto round_trip_check = [](MessageQueue& mq, const auto& msg) static {
     EXPECT_TRUE(mq.send(msg));
     auto ret = mq.receive();
     EXPECT_TRUE(ret);
     const auto& [str, prio] = ret.value();
     EXPECT_EQ(prio, Priority::DEFAULT);
-    for (size_t i = 0; i < str.size(); ++i) EXPECT_EQ(msg[i], str[i]);
+    for (auto i = 0uz; i < str.size(); ++i) EXPECT_EQ(msg[i], str[i]);
   };
 
   auto sv = "hello"sv;

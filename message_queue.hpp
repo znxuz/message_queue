@@ -76,6 +76,7 @@ class MessageQueue {
       log_error(Operation::Open);
       throw std::invalid_argument("failed to create a message queue");
     }
+    assert(get_attr());
     assert(mqdes_ && !errno);
   }
 
@@ -109,7 +110,26 @@ class MessageQueue {
         .value();  // ok to crash?
   }
 
+  // fixed after `mq_open()`
+  auto max_size() -> size_t { return static_cast<size_t>(attr_.mq_maxmsg); }
+
+  // fixed after `mq_open()`
+  auto max_msgsize() -> size_t { return static_cast<size_t>(attr_.mq_msgsize); }
+
+  auto capacity() -> size_t { return max_size() - size(); }
+
   auto is_empty() const -> size_t { return !size(); }
+
+  auto type() const -> MqType { return type_; }
+
+  auto mode() const -> MqMode {
+    return get_attr()
+        .and_then([this](std::monostate) -> std::expected<MqMode, MqError> {
+          return (attr_.mq_flags | O_NONBLOCK) ? MqMode::NON_BLOCKING
+                                               : MqMode::BLOCKING;
+        })
+        .value();
+  }
 
   template <ByteContainer C>
   auto send(const C& msg, Priority priority = Priority::DEFAULT)
@@ -128,17 +148,11 @@ class MessageQueue {
   auto receive() -> std::expected<Message, MqError> {
     Priority priority;
 
-    auto max_msg_size =
-        get_attr()
-            .and_then([this](std::monostate) -> std::expected<size_t, MqError> {
-              return static_cast<size_t>(attr_.mq_msgsize);
-            })
-            .value();
-    auto msg = std::string{};
-    msg.resize(max_msg_size);  // reserve() here is UB:
-                               // data ptr valid range: (data(), data() + size]
+    // reserve() here is UB: data() ptr valid range: (data(), data() + size];
+    // reserve() doesn't change the size
+    auto msg = std::string(max_msgsize(), '\0');
     if (auto ret =
-            mq_receive(mqdes_, msg.data(), max_msg_size, &priority.priority_);
+            mq_receive(mqdes_, msg.data(), msg.size(), &priority.priority_);
         ret != -1) {
       auto size = static_cast<size_t>(ret);
       msg.resize(size);
@@ -149,15 +163,11 @@ class MessageQueue {
     return std::unexpected{log_error(Operation::Receive)};
   }
 
-  auto type() const -> MqType { return type_; }
-
-  auto mode() const -> MqMode {
-    return get_attr()
-        .and_then([this](std::monostate) -> std::expected<MqMode, MqError> {
-          return (attr_.mq_flags | O_NONBLOCK) ? MqMode::NON_BLOCKING
-                                               : MqMode::BLOCKING;
-        })
-        .value();
+  auto clear() -> std::expected<std::monostate, MqError> {
+    // size() must not be re-called during comparison
+    for (auto i = 0uz, sz = size(); i < sz; ++i)
+      if (auto e = receive(); !e) std::unexpected{e.error()};
+    return {};
   }
 
  private:
