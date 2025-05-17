@@ -120,6 +120,8 @@ class MessageQueue {
 
   auto is_empty() const -> size_t { return !size(); }
 
+  auto name() const -> std::string_view { return name_; }
+
   auto type() const -> MqType { return type_; }
 
   auto mode() const -> MqMode {

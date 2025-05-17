@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <bit>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <thread>
 
 #include "../message_queue.hpp"
 
@@ -82,6 +85,74 @@ TEST_F(MessageQueueTest, SendContainer) {
   round_trip_check(mq, std::array<uint8_t, 3>{'m', 's', 'g'});
   round_trip_check(mq, std::vector<char>{'m', 's', 'g'});
   round_trip_check(mq, std::vector<uint8_t>{'m', 's', 'g'});
+}
+
+TEST_F(MessageQueueTest, SendPolymorphic) {
+  struct B {
+    size_t a;
+    short b;
+    bool operator<=>(const B&) const = default;
+  };
+  static_assert(sizeof(B) == 16);
+  struct D : B {
+    size_t c;
+    short d;
+    bool operator<=>(const D&) const = default;
+  };
+  static_assert(sizeof(D) == 32);
+
+  auto d = D{{0xa13f, 0x2}, 0xafe1fd, 0x5};
+  EXPECT_TRUE(mq.send(std::span(std::bit_cast<const char*>(&d), sizeof(d))));
+  auto ret = mq.receive();
+  EXPECT_TRUE(ret);
+  auto received = *std::bit_cast<const D*>(ret.value().contents.data());
+
+  EXPECT_EQ(d, received);
+}
+
+TEST_F(MessageQueueTest, SendPolymorphicPacked) {
+  struct B {
+    size_t a;
+    short b;
+    bool operator<=>(const B&) const = default;
+  } __attribute__((packed));
+  static_assert(sizeof(B) == 10);
+  struct D : B {
+    size_t c;
+    short d;
+    bool operator<=>(const D&) const = default;
+  } __attribute__((packed));
+  static_assert(sizeof(D) == 20);
+
+  auto d = D{{0xa13f, 0x2}, 0xafe1fd, 0x5};
+  EXPECT_TRUE(mq.send(std::span(std::bit_cast<const char*>(&d), sizeof(d))));
+  auto ret = mq.receive();
+  EXPECT_TRUE(ret);
+  auto received = *std::bit_cast<const D*>(ret.value().contents.data());
+
+  EXPECT_EQ(d, received);
+}
+
+TEST_F(MessageQueueTest, ProducerConsumer) {
+  static auto payload = "moin"sv;
+
+  auto producer = [](std::string_view name) static {
+    auto mq = MessageQueue(name, MqType::SENDER);
+    EXPECT_TRUE(mq.send(payload));
+  };
+  auto consumer = [](std::string_view name) static {
+    using namespace message_queue;
+    auto mq = MessageQueue(name, MqType::RECEIVER);
+    while (true) {
+      if (auto ret = mq.receive(); ret) {
+        EXPECT_EQ(payload, ret.value().contents);
+        return;
+      }
+    }
+  };
+
+  auto p = std::jthread{producer, mq.name()};
+  auto c = std::jthread{consumer, mq.name()};
 }
 
 TEST(Priority, Construction) {

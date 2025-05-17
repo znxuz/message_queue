@@ -2,6 +2,7 @@
 
 # todos
 
+- add reset flag for resetting the queue upon reopen
 - factory method returning `std::expected`
 - time-based api
 
@@ -61,10 +62,10 @@
 
 # tests
 
-- [ ] test bidirectional
-- [ ] test non-padded/padded/polymorphic objects with inherited paddings
-- [ ] test with producer/consumer threads
-- [ ] test priority comparisons
+- [X] test bidirectional
+- [X] test non-padded/padded/polymorphic objects with inherited paddings
+- [X] test with producer/consumer threads
+- [X] test priority comparisons
 
 # unix tools
 
