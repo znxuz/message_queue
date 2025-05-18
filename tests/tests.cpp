@@ -205,6 +205,44 @@ TEST_F(MessageQueueTest, ProducerConsumer) {
   auto c = std::jthread{consumer, mq.name()};
 }
 
+TEST(MessageQueueBuilder, TestBuilder) {
+  auto mode = MqMode::BLOCKING;
+  auto type = MqType::RECEIVER;
+  auto name = "/blocking_mq"sv;
+
+  mq_unlink(name.data());  // just so that the test always starts clean
+
+  auto ret = MessageQueue::Builder()
+                 .set_mode(mode)
+                 .set_type(type)
+                 .set_name(name)
+                 .reset(true)
+                 .build();
+  EXPECT_FALSE(ret);  // should fail cuz queue doesn't exist yet to be unlinked
+
+  ret = MessageQueue::Builder()
+            .set_mode(mode)
+            .set_type(type)
+            .set_name(name)
+            .reset(false)
+            .build();
+  EXPECT_TRUE(ret);
+
+  const auto& mq = *ret;
+  EXPECT_EQ(mode, mq.mode());
+  EXPECT_EQ(type, mq.type());
+  EXPECT_EQ(name, mq.name());
+
+  ret = MessageQueue::Builder()
+            .set_mode(mode)
+            .set_type(type)
+            .set_name(name)
+            .reset(true)
+            .build();
+  EXPECT_TRUE(ret);
+  EXPECT_TRUE(MessageQueue::unlink(name));
+}
+
 TEST(Priority, Construction) {
   const Priority p;
   EXPECT_EQ(p, Priority::DEFAULT);

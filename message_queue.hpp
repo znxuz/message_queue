@@ -17,6 +17,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 
 namespace message_queue {
 
@@ -129,14 +130,14 @@ class MessageQueue {
     return get_attr()
         .and_then(
             [this](std::monostate) -> std::expected<MqMode, detail::MqError> {
-              return (attr_.mq_flags | O_NONBLOCK) ? MqMode::NON_BLOCKING
+              return (attr_.mq_flags & O_NONBLOCK) ? MqMode::NON_BLOCKING
                                                    : MqMode::BLOCKING;
             })
         .value();
   }
 
-  template <detail::ByteContainer C>
-  auto send(const C& msg, Priority priority = Priority::DEFAULT)
+  auto send(const detail::ByteContainer auto& msg,
+            Priority priority = Priority::DEFAULT)
       -> std::expected<std::monostate, detail::MqError> {
     if (mq_send(mqdes_, std::bit_cast<const char*>(msg.data()), msg.size(),
                 priority))
@@ -175,8 +176,63 @@ class MessageQueue {
     return {};
   }
 
+  class Builder {
+   public:
+    auto set_name(std::string_view name) -> Builder& {
+      assert(!std::exchange(name_, name));
+      return *this;
+    }
+
+    auto set_type(MqType type) -> Builder& {
+      assert(!std::exchange(type_, type));
+      type_ = type;
+      return *this;
+    }
+
+    auto set_mode(MqMode mode) -> Builder& {
+      assert(!std::exchange(mode_, mode));
+      return *this;
+    }
+
+    auto reset(bool reset) -> Builder& {
+      assert(!std::exchange(reset_, reset));
+      return *this;
+    }
+
+    auto build() -> std::expected<MessageQueue, detail::MqError> {
+      assert(name_);
+      assert(mode_);
+      assert(type_);
+
+      if (reset_.has_value() && *reset_) {
+        std::expected<std::monostate, detail::MqError> ret =
+            MessageQueue::unlink(*name_);
+        if (!ret) return std::unexpected{ret.error()};
+      }
+
+      try {
+        return MessageQueue{*name_, *mode_, *type_};
+      } catch (const std::invalid_argument& e) {
+        return std::unexpected<detail::MqError>(e.what());
+      }
+    }
+
+   private:
+    std::optional<std::string_view> name_;
+    std::optional<MqMode> mode_;
+    std::optional<MqType> type_;
+    std::optional<bool> reset_;
+  };
+
+  static auto unlink(std::string_view name)
+      -> std::expected<std::monostate, detail::MqError> {
+    if (mq_unlink(name.data()))
+      return std::unexpected{parse_err(Operation::Unlink)};
+    return {};
+  }
+
  private:
-  enum struct Operation { Open, Close, Send, Receive, GetAttr };
+  enum struct Operation { Open, Close, Send, Receive, GetAttr, Unlink };
   mutable mq_attr attr_{};
   std::string_view name_{};
   MqType type_{};
@@ -197,7 +253,7 @@ class MessageQueue {
     return name;
   }
 
-  auto parse_err(Operation op) const -> detail::MqError {
+  static auto parse_err(Operation op) -> detail::MqError {
     using enum Operation;
     static const auto err_map = std::unordered_map<
         Operation, std::unordered_map<int, std::string_view>>{
@@ -226,7 +282,11 @@ class MessageQueue {
           {ETIMEDOUT, "TODO: time-based api not implemented"}}},
         {GetAttr,
          {{EBADF, "invalid mq fd"},
-          {EINVAL, "mq_flags contains more than O_NONBLOCK"}}}};
+          {EINVAL, "mq_flags contains more than O_NONBLOCK"}}},
+        {Unlink,
+         {{EACCES, "insufficient permission"},
+          {ENAMETOOLONG, "name too long"},
+          {ENOENT, "no message queue found under this name"}}}};
 
     auto err = std::exchange(errno, 0);
     return std::format("Error: operation {} with errno {}: {}",
