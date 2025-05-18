@@ -246,14 +246,12 @@ TEST(MessageQueueBuilder, TestBuilder) {
 TEST(Priority, Construction) {
   const Priority p;
   EXPECT_EQ(p, Priority::DEFAULT);
-  Priority p1(5);
-  EXPECT_EQ(p1, 5);
+  EXPECT_EQ(Priority{5}, 5);
+  EXPECT_EQ(Priority{0}, 0);
 
-  Priority p2(0);
-  EXPECT_EQ(p2, 0);
-
-  Priority p3(std::numeric_limits<unsigned int>::max());
-  EXPECT_EQ(p3, std::numeric_limits<unsigned int>::max());
+  EXPECT_THROW(Priority{32768}, std::invalid_argument);
+  EXPECT_THROW(Priority{static_cast<unsigned int>(-1)}, std::invalid_argument);
+  EXPECT_EQ(Priority{32767}, 32767);
 }
 
 TEST(Priority, ImplicitConversion) {
@@ -280,15 +278,18 @@ TEST(Priority, ComparisonOperators) {
   EXPECT_TRUE(low != medium);
 }
 
-TEST(Priority, ConstexprContext) {
-  using namespace message_queue::detail;
-  constexpr Priority p1;
-  constexpr Priority p2(4);
+TEST(Constexpr, Constexpr) {
+  constexpr auto p1 = Priority{};
+  constexpr auto p2 = Priority{4};
   static_assert(p1 == Priority::DEFAULT);
   static_assert(p2 == 4);
   static_assert(4 == p2);
-  static_assert(Priority(2) < Priority(3));
+  static_assert(Priority{2} < Priority{3});
+  constexpr auto p3 = Priority{32767};
+  static_assert(p3 == 32767);
+  // constexpr auto compile_err = Priority{32768};
 
+  using namespace message_queue::detail;
   static_assert(Byte<char>);
   static_assert(Byte<signed char>);
   static_assert(Byte<unsigned char>);

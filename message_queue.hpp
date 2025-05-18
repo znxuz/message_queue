@@ -52,13 +52,22 @@ class MessageQueue {
  public:
   struct Priority {
     constexpr static inline unsigned int DEFAULT = 3;
+
     constexpr Priority() noexcept = default;
-    constexpr Priority(unsigned int priority) noexcept : priority_{priority} {}
+    constexpr Priority(unsigned int priority)
+        : priority_{priority_sanity_check(priority)} {}
     constexpr operator unsigned int() const { return priority_; }
 
    private:
     friend class MessageQueue;
     unsigned int priority_{DEFAULT};
+
+    constexpr static auto priority_sanity_check(unsigned int priority)
+        -> unsigned int {
+      if (priority > 32768 - 1)  // sysconf(_SC_MQ_PRIO_MAX) - 1
+        throw std::invalid_argument{"priority exceeds the max. limit(32767)"};
+      return priority;
+    }
   };
 
   struct Message {

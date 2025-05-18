@@ -29,7 +29,7 @@
 	- priority:
 		- range from `0(low)` to `$(getconf MQ_PRIO_MAX)` or
 		  `sysconf(_SC_MQ_PRIO_MAX)-1(high)`: 32768 on Linux, 31 with POSIX.1
-		- [ ] as nested/inner class with bound checking
+		- [X] as nested/inner class with bound checking
 		- [X] serialize to `cout`: impl. conversion
 	- [X] respect `errno` -> `man mq_send:ERRORS`
 - `mq_receive()`:
