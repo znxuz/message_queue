@@ -1,5 +1,3 @@
-[![wakatime](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e.svg)](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e)
-
 # todos
 
 - add reset flag for resetting the queue upon reopen
@@ -11,23 +9,21 @@
 - POSIX-confirm name `std::string_view` sanity check:
 	- always start with forward slash & none forward slash afterwards
 	- null-terminated string to `getconf NAME_MAX /` (filesystem-specific)
-	- TODO maybe auto-append the initial slash if not exist
 - `struct mq_attr`:
 	- `mq_flags`: (ignored for `mq_open()`) flags set for the queue:
 		- only `O_NONBLOCK`: non-blocking for `mq_receive()` or `mq_send()`
 	- `mq_maxmsg`: max. # of msgs stored in the queue; **must be non-zero**
-	- `mq_msgsize`: size (bytes) of each msg; **must be non-zero**
+	- `mq_msgsize`: max. size (bytes) of each msg; **must be non-zero**
 	-  `mq_curmsgs`: # of msgs currently in the queue
 - `mq_open()`:
-	- always bidirectional based on the API
-	- attach if exists, otherwise create -> no `O_CLOEXEC`
+	- always bidirectional based on the API; attach if exists
 	- `mq_attr`:
 		- `mq_flags`: ignored
-		- `mq_maxmsg`: derive from template analog to `std::array`
-		- `mq_msgsize`: derive from template: [ ] `sizeof` safe?
+		- `mq_maxmsg`: defaulted to linux kernel config /proc
+		- `mq_msgsize`: defaulted to linux kernel config /proc
 		- `mq_curmsgs`: ignored
 	- [X] respect `errno` and make them human-readable: -> `man mq_open:ERRORS`
-	- return `(mqd_t)-1` on error -> TODO exceptions?
+	- [X] `(mqd_t)-1` on error -> throw in ctor
 - `mq_send()`:
 	- [ ] overloads with `const T&`, `T&&`, maybe analog `emplace_back()` too?
 	- [ ] overloads with optional timeout -> `std::chrono`
@@ -40,9 +36,8 @@
 	- [X] respect `errno` -> `man mq_send:ERRORS`
 - `mq_receive()`:
 	- [X] should return (msg, priority) -> `std::expected<std::pair<...>, E>`
-	- RVO via `std::bit_cast` on return?
-	- optional timeout: TODO maybe as optional template param for non-blocking
-	  behavior and ` if constexpr ...` for both send and receive
+	- [X] RVO via `Message` inner struct
+	- [ ] overloads with optional timeout -> `std::chrono`
 	- [X] respect `errno` -> `man mq_receive:ERRORS`
 - `mq_notify()`: notify upon msg arrival on a **previously empty** queue:
 	- `SIGEV_NONE`: only register, no notification
@@ -72,3 +67,5 @@
 - `ipcs -q`
 - `cat /dev/mqueue/<queue_name>`: size in bytes (not in messages)
 - `/proc/sys/fs/mqueue/`: config dir
+
+[![wakatime](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e.svg)](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e)

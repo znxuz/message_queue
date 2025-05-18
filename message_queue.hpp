@@ -199,35 +199,34 @@ class MessageQueue {
 
   auto parse_err(Operation op) const -> detail::MqError {
     using enum Operation;
-    static const auto err_map =
-        std::unordered_map<Operation,
-                           std::unordered_map<int, std::string_view>>{
-            {Open,
-             {{EACCES, "insufficient permission"},
-              {EEXIST, "queue with the same name already exist"},
-              {EMFILE, "per-process limit on the number of fds is reached"},
-              {ENFILE, "system-wide limit on the number of fds is reached"},
-              {ENOENT, "queue doesn't exist"},
-              {ENOMEM, "insufficient memory"},
-              {ENOSPC, "insufficient space"}}},
-            {Close, {{EBADF, "invalid mq fd"}}},
-            {Send,
-             {{EAGAIN, "queue is full"},
-              {EBADF, "invalid mq fd"},
-              {EINTR, "interrupted by a single handler"},
-              {EINVAL, "TODO: not implemented"},
-              {EMSGSIZE, "contained message length greater than max. size"},
-              {ETIMEDOUT, "TODO: not implemented"}}},
-            {Receive,
-             {{EAGAIN, "queue is empty"},
-              {EBADF, "invalid mq fd"},
-              {EINTR, "interrupted by a single handler"},
-              {EINVAL, "TODO: time-based api not implemented"},
-              {EMSGSIZE, "given message length less than max. size"},
-              {ETIMEDOUT, "TODO: time-based api not implemented"}}},
-            {GetAttr,
-             {{EBADF, "invalid mq fd"},
-              {EINVAL, "mq_flags contains more than O_NONBLOCK"}}}};
+    static const auto err_map = std::unordered_map<
+        Operation, std::unordered_map<int, std::string_view>>{
+        {Open,
+         {{EACCES, "insufficient permission"},
+          {EEXIST, "queue with the same name already exist"},
+          {EMFILE, "per-process limit on the number of fds is reached"},
+          {ENFILE, "system-wide limit on the number of fds is reached"},
+          {ENOENT, "queue doesn't exist"},
+          {ENOMEM, "insufficient memory"},
+          {ENOSPC, "insufficient space"}}},
+        {Close, {{EBADF, "invalid mq fd"}}},
+        {Send,
+         {{EAGAIN, "queue is full"},
+          {EBADF, "invalid mq fd, or the queue is not opened for sending"},
+          {EINTR, "interrupted by a single handler"},
+          {EINVAL, "TODO: not implemented"},
+          {EMSGSIZE, "contained message length greater than max. size"},
+          {ETIMEDOUT, "TODO: not implemented"}}},
+        {Receive,
+         {{EAGAIN, "queue is empty"},
+          {EBADF, "invalid mq fd, or the queue is not opened for receiving"},
+          {EINTR, "interrupted by a single handler"},
+          {EINVAL, "TODO: time-based api not implemented"},
+          {EMSGSIZE, "given message length less than max. size"},
+          {ETIMEDOUT, "TODO: time-based api not implemented"}}},
+        {GetAttr,
+         {{EBADF, "invalid mq fd"},
+          {EINVAL, "mq_flags contains more than O_NONBLOCK"}}}};
 
     auto err = std::exchange(errno, 0);
     return std::format("Error: operation {} with errno {}: {}",

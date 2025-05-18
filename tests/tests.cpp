@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <mqueue.h>
 
 #include <bit>
 #include <cstdint>
@@ -69,14 +70,14 @@ TEST_F(MessageQueueTest, Attr) {
   EXPECT_EQ(mq.mode(), MqMode::NON_BLOCKING);
 }
 
-TEST_F(MessageQueueTest, EmptyLogError) {
+TEST_F(MessageQueueTest, EmptyError) {
   auto ret = mq.receive();
   EXPECT_FALSE(ret);
 
   EXPECT_EQ(ret.error(), "Error: operation 3 with errno 11: queue is empty"s);
 }
 
-TEST_F(MessageQueueTest, SendLogFull) {
+TEST_F(MessageQueueTest, FullError) {
   for (auto i : std::views::iota(0uz, mq.max_size()))
     EXPECT_TRUE(mq.send(""sv));
 
@@ -85,6 +86,26 @@ TEST_F(MessageQueueTest, SendLogFull) {
   EXPECT_EQ(ret.error(), "Error: operation 2 with errno 11: queue is full"s);
 
   EXPECT_TRUE(mq.clear());
+}
+
+TEST_F(MessageQueueTest, SenderError) {
+  auto sender = MessageQueue{"/sender", MqType::SENDER};
+  auto ret = sender.receive();
+  EXPECT_FALSE(ret);
+  EXPECT_EQ(ret.error(),
+            "Error: operation 3 with errno 9: invalid mq fd, or the queue is "
+            "not opened for receiving");
+  mq_unlink(sender.name().data());
+}
+
+TEST_F(MessageQueueTest, ReceiverError) {
+  auto receiver = MessageQueue{"/receiver", MqType::RECEIVER};
+  auto ret = receiver.send("");
+  EXPECT_FALSE(ret);
+  EXPECT_EQ(ret.error(),
+            "Error: operation 2 with errno 9: invalid mq fd, or the queue is "
+            "not opened for sending");
+  mq_unlink(receiver.name().data());
 }
 
 TEST_F(MessageQueueTest, SendRawPointer) {
