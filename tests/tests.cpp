@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <ranges>
@@ -35,6 +36,25 @@ TEST_F(MessageQueueTest, Construction) {
   EXPECT_EQ(mq.mode(), MqMode::NON_BLOCKING);
 }
 
+TEST_F(MessageQueueTest, Move) {
+  auto name = std::string(mq.name());
+  auto mode = mq.mode();
+  auto type = mq.type();
+  auto max_size = mq.max_size();
+  auto max_msgsize = mq.max_msgsize();
+
+  auto new_mq = std::move(mq);
+  EXPECT_EQ(new_mq.name(), name);
+  EXPECT_EQ(new_mq.mode(), mode);
+  EXPECT_EQ(new_mq.type(), type);
+  EXPECT_EQ(new_mq.max_size(), max_size);
+  EXPECT_EQ(new_mq.max_msgsize(), max_msgsize);
+
+  EXPECT_TRUE(new_mq.send("moin"));
+  EXPECT_EQ(new_mq.size(), 1);
+  EXPECT_EQ(new_mq.receive().value().contents, "moin"s);
+}
+
 TEST_F(MessageQueueTest, Attr) {
   auto from_file = [](const std::string& filename) static {
     std::ifstream file(filename);
@@ -49,12 +69,21 @@ TEST_F(MessageQueueTest, Attr) {
   EXPECT_EQ(mq.mode(), MqMode::NON_BLOCKING);
 }
 
-TEST_F(MessageQueueTest, EmptyLogError) { EXPECT_FALSE(mq.receive()); }
+TEST_F(MessageQueueTest, EmptyLogError) {
+  auto ret = mq.receive();
+  EXPECT_FALSE(ret);
+
+  EXPECT_EQ(ret.error(), "Error: operation 3 with errno 11: queue is empty"s);
+}
 
 TEST_F(MessageQueueTest, SendLogFull) {
   for (auto i : std::views::iota(0uz, mq.max_size()))
     EXPECT_TRUE(mq.send(""sv));
-  EXPECT_FALSE(mq.send(""sv));
+
+  auto ret = mq.send("");
+  EXPECT_FALSE(ret);
+  EXPECT_EQ(ret.error(), "Error: operation 2 with errno 11: queue is full"s);
+
   EXPECT_TRUE(mq.clear());
 }
 
@@ -193,6 +222,7 @@ TEST(Priority, ComparisonOperators) {
 }
 
 TEST(Priority, ConstexprContext) {
+  using namespace message_queue::detail;
   constexpr Priority p1;
   constexpr Priority p2(4);
   static_assert(p1 == Priority::DEFAULT);

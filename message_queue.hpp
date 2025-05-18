@@ -9,7 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <expected>
-#include <iterator>
+#include <format>
 #include <print>
 #include <span>
 #include <stdexcept>
@@ -20,6 +20,8 @@
 
 namespace message_queue {
 
+inline constexpr size_t DEFAULT_PERM = 0640;
+
 // can be a template param
 enum struct MqType {
   RECEIVER = O_RDONLY,
@@ -29,7 +31,8 @@ enum struct MqType {
 
 enum struct MqMode { BLOCKING = 0, NON_BLOCKING = O_NONBLOCK };
 
-using MqError = int;
+namespace detail {
+using MqError = std::string;
 
 template <typename T>
 concept Byte = sizeof(T) == 1 && std::is_integral_v<T>;
@@ -42,15 +45,14 @@ concept ByteContainer = requires(C c) {
   { c.begin() } -> std::contiguous_iterator;
   { c.end() } -> std::contiguous_iterator;
 };
-
-inline constexpr size_t DEFAULT_PERM = 0640;
+};  // namespace detail
 
 class MessageQueue {
  public:
   struct Priority {
     constexpr static inline unsigned int DEFAULT = 3;
-    constexpr Priority() = default;
-    constexpr Priority(unsigned int priority) : priority_{priority} {}
+    constexpr Priority() noexcept = default;
+    constexpr Priority(unsigned int priority) noexcept : priority_{priority} {}
     constexpr operator unsigned int() const { return priority_; }
 
    private:
@@ -72,10 +74,8 @@ class MessageQueue {
             name_.data(),
             O_CREAT | std::to_underlying(type_) | std::to_underlying(mode),
             DEFAULT_PERM, nullptr)} {
-    if (mqdes_ == -1) {
-      log_error(Operation::Open);
-      throw std::invalid_argument("failed to create a message queue");
-    }
+    if (mqdes_ == -1) throw std::invalid_argument{parse_err(Operation::Open)};
+
     assert(get_attr());
     assert(mqdes_ && !errno);
   }
@@ -104,9 +104,10 @@ class MessageQueue {
 
   auto size() const -> size_t {
     return get_attr()
-        .and_then([this](std::monostate) -> std::expected<size_t, MqError> {
-          return static_cast<size_t>(attr_.mq_curmsgs);
-        })
+        .and_then(
+            [this](std::monostate) -> std::expected<size_t, detail::MqError> {
+              return static_cast<size_t>(attr_.mq_curmsgs);
+            })
         .value();  // ok to crash?
   }
 
@@ -126,28 +127,30 @@ class MessageQueue {
 
   auto mode() const -> MqMode {
     return get_attr()
-        .and_then([this](std::monostate) -> std::expected<MqMode, MqError> {
-          return (attr_.mq_flags | O_NONBLOCK) ? MqMode::NON_BLOCKING
-                                               : MqMode::BLOCKING;
-        })
+        .and_then(
+            [this](std::monostate) -> std::expected<MqMode, detail::MqError> {
+              return (attr_.mq_flags | O_NONBLOCK) ? MqMode::NON_BLOCKING
+                                                   : MqMode::BLOCKING;
+            })
         .value();
   }
 
-  template <ByteContainer C>
+  template <detail::ByteContainer C>
   auto send(const C& msg, Priority priority = Priority::DEFAULT)
-      -> std::expected<std::monostate, MqError> {
+      -> std::expected<std::monostate, detail::MqError> {
     if (mq_send(mqdes_, std::bit_cast<const char*>(msg.data()), msg.size(),
                 priority))
-      return std::unexpected{log_error(Operation::Send)};
+      return std::unexpected{parse_err(Operation::Send)};
     return {};
   }
 
   // for null-terminated arrays
-  auto send(const Byte auto* msg, Priority priority = Priority::DEFAULT) {
+  auto send(const detail::Byte auto* msg,
+            Priority priority = Priority::DEFAULT) {
     return send(std::span(msg, strlen(msg)), priority);
   }
 
-  auto receive() -> std::expected<Message, MqError> {
+  auto receive() -> std::expected<Message, detail::MqError> {
     Priority priority;
 
     // reserve() here is UB: data() ptr valid range: (data(), data() + size];
@@ -162,10 +165,10 @@ class MessageQueue {
       assert(msg.size() == size);
       return Message{std::move(msg), priority};
     }
-    return std::unexpected{log_error(Operation::Receive)};
+    return std::unexpected{parse_err(Operation::Receive)};
   }
 
-  auto clear() -> std::expected<std::monostate, MqError> {
+  auto clear() -> std::expected<std::monostate, detail::MqError> {
     // size() must not be re-called during comparison
     for (auto i = 0uz, sz = size(); i < sz; ++i)
       if (auto e = receive(); !e) std::unexpected{e.error()};
@@ -179,9 +182,9 @@ class MessageQueue {
   MqType type_{};
   mqd_t mqdes_{-1};
 
-  auto get_attr() const -> std::expected<std::monostate, MqError> {
+  auto get_attr() const -> std::expected<std::monostate, detail::MqError> {
     if (mq_getattr(mqdes_, &attr_))
-      return std::unexpected{log_error(Operation::GetAttr)};
+      return std::unexpected{parse_err(Operation::GetAttr)};
     return {};
   }
 
@@ -194,41 +197,41 @@ class MessageQueue {
     return name;
   }
 
-  auto log_error(Operation op) const -> MqError {
+  auto parse_err(Operation op) const -> detail::MqError {
     using enum Operation;
-    // TODO: std::vector/array based instead of umap
-    static const std::unordered_map<Operation,
-                                    std::unordered_map<int, std::string_view>>
-        err_map{{Open,
-                 {{EACCES, "insufficient permission"},
-                  {EEXIST, "queue with the same name already exist"},
-                  {EMFILE, "per-process limit on the number of fds is reached"},
-                  {ENFILE, "system-wide limit on the number of fds is reached"},
-                  {ENOENT, "queue doesn't exist"},
-                  {ENOMEM, "insufficient memory"},
-                  {ENOSPC, "insufficient space"}}},
-                {Close, {{EBADF, "invalid mq fd"}}},
-                {Send,
-                 {{EAGAIN, "queue is full"},
-                  {EBADF, "invalid mq fd"},
-                  {EINTR, "interrupted by a single handler"},
-                  {EINVAL, "TODO: not implemented"},
-                  {EMSGSIZE, "contained message length greater than max. size"},
-                  {ETIMEDOUT, "TODO: not implemented"}}},
-                {Receive,
-                 {{EAGAIN, "queue is empty"},
-                  {EBADF, "invalid mq fd"},
-                  {EINTR, "interrupted by a single handler"},
-                  {EINVAL, "TODO: time-based api not implemented"},
-                  {EMSGSIZE, "given message length less than max. size"},
-                  {ETIMEDOUT, "TODO: time-based api not implemented"}}},
-                {GetAttr,
-                 {{EBADF, "invalid mq fd"},
-                  {EINVAL, "mq_flags contains more than O_NONBLOCK"}}}};
+    static const auto err_map =
+        std::unordered_map<Operation,
+                           std::unordered_map<int, std::string_view>>{
+            {Open,
+             {{EACCES, "insufficient permission"},
+              {EEXIST, "queue with the same name already exist"},
+              {EMFILE, "per-process limit on the number of fds is reached"},
+              {ENFILE, "system-wide limit on the number of fds is reached"},
+              {ENOENT, "queue doesn't exist"},
+              {ENOMEM, "insufficient memory"},
+              {ENOSPC, "insufficient space"}}},
+            {Close, {{EBADF, "invalid mq fd"}}},
+            {Send,
+             {{EAGAIN, "queue is full"},
+              {EBADF, "invalid mq fd"},
+              {EINTR, "interrupted by a single handler"},
+              {EINVAL, "TODO: not implemented"},
+              {EMSGSIZE, "contained message length greater than max. size"},
+              {ETIMEDOUT, "TODO: not implemented"}}},
+            {Receive,
+             {{EAGAIN, "queue is empty"},
+              {EBADF, "invalid mq fd"},
+              {EINTR, "interrupted by a single handler"},
+              {EINVAL, "TODO: time-based api not implemented"},
+              {EMSGSIZE, "given message length less than max. size"},
+              {ETIMEDOUT, "TODO: time-based api not implemented"}}},
+            {GetAttr,
+             {{EBADF, "invalid mq fd"},
+              {EINVAL, "mq_flags contains more than O_NONBLOCK"}}}};
 
-    std::println(stderr, "operation {} with errno {}: {}",
-                 std::to_underlying(op), errno, err_map.at(op).at(errno));
-    return std::exchange(errno, 0);
+    auto err = std::exchange(errno, 0);
+    return std::format("Error: operation {} with errno {}: {}",
+                       std::to_underlying(op), err, err_map.at(op).at(err));
   }
 };
 };  // namespace message_queue
