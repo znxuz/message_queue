@@ -2,6 +2,7 @@
 
 - `make run` to compile and run `main.cpp`
 - `make test` to run the tests from the `tests/` directory
+- tested with `gcc (GCC) 15.1.1 20250425`
 
 # Manpage Notes
 
@@ -24,8 +25,8 @@
 	- [X] respect `errno` and make them human-readable: -> `man mq_open:ERRORS`
 	- [X] `(mqd_t)-1` on error -> throw in ctor
 - `mq_send()`:
+    - overload via `concept`
 	- [X] overload with timeout -> `std::chrono::duration`
-	- `mq_send()` takes `const char*`: `std::bit_cast`
 	- priority:
 		- range from `0(low)` to `$(getconf MQ_PRIO_MAX)` or
 		  `sysconf(_SC_MQ_PRIO_MAX)-1(high)`: 32768 on Linux, 31 with POSIX.1
@@ -45,6 +46,7 @@
 	- unregister with `(struct sigevent*)NULL`
 	- no notification if `mq_receive` is waiting on new msg
 	- errno and example: `man mq_notify`
+    - not yet implemented
 - `mq_close()`:
 	- just close after use; no delete
 	- or the notification is removed if exists

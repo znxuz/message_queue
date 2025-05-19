@@ -47,7 +47,6 @@ concept StlSequence = requires(C c) {
   c.size();
 };
 
-// Accepted are stl-containers and null-terminated char ptrs/arrays
 template <typename C>
 concept ByteSequence = requires(C c) {
   requires Byte<std::decay_t<decltype(c[0])>>;
@@ -127,13 +126,11 @@ class MessageQueue {
             [this](std::monostate) -> std::expected<size_t, detail::MqError> {
               return static_cast<size_t>(attr_.mq_curmsgs);
             })
-        .value();  // ok to crash?
+        .value();
   }
 
-  // fixed after `mq_open()`
   auto max_size() -> size_t { return static_cast<size_t>(attr_.mq_maxmsg); }
 
-  // fixed after `mq_open()`
   auto max_msgsize() -> size_t { return static_cast<size_t>(attr_.mq_msgsize); }
 
   auto capacity() -> size_t { return max_size() - size(); }
