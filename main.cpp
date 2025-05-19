@@ -1,6 +1,5 @@
 #include <cassert>
 #include <iostream>
-#include <string_view>
 #include "message_queue.hpp"
 
 static constexpr auto queue_name = "/my_queue";
@@ -13,7 +12,7 @@ void use_queue(MessageQueue queue) {
 int main() {
     auto queue1 = MessageQueue{ queue_name };
     assert(queue1.size() == 0);
-    queue1.send("Hello, world!");
+    queue1.send("Hello, world!", MessageQueue::Priority{ 3 });
     assert(!queue1.is_empty());
     assert(queue1.size() == 1);
 
@@ -34,5 +33,5 @@ int main() {
 
     // Additional task: Make the following line compile.
     std::cout << priority << '\n';
-    std::println("{}", priority);
+    // std::println("{}", priority);
 }

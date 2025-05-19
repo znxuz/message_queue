@@ -51,7 +51,7 @@ TEST_F(MessageQueueTest, Move) {
   EXPECT_EQ(new_mq.max_size(), max_size);
   EXPECT_EQ(new_mq.max_msgsize(), max_msgsize);
 
-  EXPECT_TRUE(new_mq.send("moin"));
+  EXPECT_TRUE(new_mq.send("moin", Priority{3}));
   EXPECT_EQ(new_mq.size(), 1);
   EXPECT_EQ(new_mq.receive().value().contents, "moin"s);
 }
@@ -79,16 +79,16 @@ TEST_F(MessageQueueTest, EmptyError) {
 
 TEST_F(MessageQueueTest, FullError) {
   for (auto i : std::views::iota(0uz, mq.max_size()))
-    EXPECT_TRUE(mq.send(""sv));
+    EXPECT_TRUE(mq.send(""sv, 3));
 
-  auto ret = mq.send("");
+  auto ret = mq.send("", 3);
   EXPECT_FALSE(ret);
   EXPECT_EQ(ret.error(), "Error: operation 2 with errno 11: queue is full"s);
 
   EXPECT_TRUE(mq.clear());
 }
 
-TEST_F(MessageQueueTest, SenderError) {
+TEST_F(MessageQueueTest, SenderPermErr) {
   auto sender = MessageQueue{"/sender", MqType::SENDER};
   auto ret = sender.receive();
   EXPECT_FALSE(ret);
@@ -98,9 +98,9 @@ TEST_F(MessageQueueTest, SenderError) {
   mq_unlink(sender.name().data());
 }
 
-TEST_F(MessageQueueTest, ReceiverError) {
+TEST_F(MessageQueueTest, ReceiverPermErr) {
   auto receiver = MessageQueue{"/receiver", MqType::RECEIVER};
-  auto ret = receiver.send("");
+  auto ret = receiver.send("", 3);
   EXPECT_FALSE(ret);
   EXPECT_EQ(ret.error(),
             "Error: operation 2 with errno 9: invalid mq fd, or the queue is "
@@ -109,21 +109,34 @@ TEST_F(MessageQueueTest, ReceiverError) {
 }
 
 TEST_F(MessageQueueTest, SendRawPointer) {
-  auto s = "hello";
-  EXPECT_TRUE(mq.send(s));
+  const auto* ptr = "hello";
+  EXPECT_TRUE(mq.send(ptr, 3));
+
   auto ret = mq.receive();
   EXPECT_TRUE(ret);
   const auto& [msg, prio] = ret.value();
-  EXPECT_EQ(s, msg);
+  EXPECT_EQ(std::string{ptr}, msg);
+  EXPECT_EQ(msg.size(), 5);
+}
+
+TEST_F(MessageQueueTest, SendRawArray) {
+  EXPECT_TRUE(mq.send("hello", 3));
+
+  auto ret = mq.receive();
+  EXPECT_TRUE(ret);
+  const auto& [msg, prio] = ret.value();
+  EXPECT_EQ(std::string{"hello"}, msg);
+  EXPECT_EQ(msg.size(), 5);
 }
 
 TEST_F(MessageQueueTest, SendContainer) {
   auto round_trip_check = [](MessageQueue& mq, const auto& msg) static {
-    EXPECT_TRUE(mq.send(msg));
+    EXPECT_TRUE(mq.send(msg, 3));
     auto ret = mq.receive();
     EXPECT_TRUE(ret);
     const auto& [str, prio] = ret.value();
-    EXPECT_EQ(prio, Priority::DEFAULT);
+    EXPECT_EQ(prio, 3);
+    EXPECT_EQ(prio, Priority{3});
     for (auto i = 0uz; i < str.size(); ++i) EXPECT_EQ(msg[i], str[i]);
   };
 
@@ -152,7 +165,7 @@ TEST_F(MessageQueueTest, SendPolymorphic) {
   static_assert(sizeof(D) == 32);
 
   auto d = D{{0xa13f, 0x2}, 0xafe1fd, 0x5};
-  EXPECT_TRUE(mq.send(std::span(std::bit_cast<const char*>(&d), sizeof(d))));
+  EXPECT_TRUE(mq.send(std::span(std::bit_cast<const char*>(&d), sizeof(d)), 3));
   auto ret = mq.receive();
   EXPECT_TRUE(ret);
   auto received = *std::bit_cast<const D*>(ret.value().contents.data());
@@ -175,7 +188,7 @@ TEST_F(MessageQueueTest, SendPolymorphicPacked) {
   static_assert(sizeof(D) == 20);
 
   auto d = D{{0xa13f, 0x2}, 0xafe1fd, 0x5};
-  EXPECT_TRUE(mq.send(std::span(std::bit_cast<const char*>(&d), sizeof(d))));
+  EXPECT_TRUE(mq.send(std::span(std::bit_cast<const char*>(&d), sizeof(d)), 3));
   auto ret = mq.receive();
   EXPECT_TRUE(ret);
   auto received = *std::bit_cast<const D*>(ret.value().contents.data());
@@ -188,7 +201,7 @@ TEST_F(MessageQueueTest, ProducerConsumer) {
 
   auto producer = [](std::string_view name) static {
     auto mq = MessageQueue(name, MqType::SENDER);
-    EXPECT_TRUE(mq.send(payload));
+    EXPECT_TRUE(mq.send(payload, 3));
   };
   auto consumer = [](std::string_view name) static {
     using namespace message_queue;
@@ -249,7 +262,7 @@ TEST(Concept, ByteSequenceTest) {
   check(char_arr);
   const char* char_ptr = "hello";
   check(char_ptr);
-  check(std::span{char_ptr, 2}); // if ptr/arr isn't null-terminated
+  check(std::span{char_ptr, 2});  // if ptr/arr isn't null-terminated
 
   const uint8_t arr[] = {1, 2, '\0', 4};
   const uint8_t* ptr = arr;
@@ -300,8 +313,6 @@ TEST(MessageQueueBuilder, TestBuilder) {
 }
 
 TEST(Priority, Construction) {
-  const Priority p;
-  EXPECT_EQ(p, Priority::DEFAULT);
   EXPECT_EQ(Priority{5}, 5);
   EXPECT_EQ(Priority{0}, 0);
 
@@ -335,9 +346,7 @@ TEST(Priority, ComparisonOperators) {
 }
 
 TEST(Constexpr, Constexpr) {
-  constexpr auto p1 = Priority{};
   constexpr auto p2 = Priority{4};
-  static_assert(p1 == Priority::DEFAULT);
   static_assert(p2 == 4);
   static_assert(4 == p2);
   static_assert(Priority{2} < Priority{3});

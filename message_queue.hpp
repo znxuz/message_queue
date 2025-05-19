@@ -58,16 +58,16 @@ concept ByteSequence = requires(C c) {
 class MessageQueue {
  public:
   struct Priority {
-    constexpr static inline unsigned int DEFAULT = 3;
+    using underlying_type = unsigned int;
 
-    constexpr Priority() noexcept = default;
+    constexpr Priority() = delete;
     constexpr Priority(unsigned int priority)
         : priority_{priority_sanity_check(priority)} {}
     constexpr operator unsigned int() const { return priority_; }
 
    private:
     friend class MessageQueue;
-    unsigned int priority_{DEFAULT};
+    unsigned int priority_;
 
     constexpr static auto priority_sanity_check(unsigned int priority)
         -> unsigned int {
@@ -152,8 +152,7 @@ class MessageQueue {
         .value();
   }
 
-  auto send(const detail::ByteSequence auto& sequence,
-            Priority priority = Priority::DEFAULT)
+  auto send(const detail::ByteSequence auto& sequence, Priority priority)
       -> std::expected<std::monostate, detail::MqError> {
     const auto [ptr, size] = get_ptr_and_size(sequence);
     if (mq_send(mqdes_, reinterpret_cast<const char*>(ptr), size, priority))
@@ -162,13 +161,12 @@ class MessageQueue {
   }
 
   auto receive() -> std::expected<Message, detail::MqError> {
-    Priority priority;
+    unsigned int priority;
 
     // reserve() here is UB: data() ptr valid range: (data(), data() + size];
     // reserve() doesn't change the size
     auto msg = std::string(max_msgsize(), '\0');
-    if (auto ret =
-            mq_receive(mqdes_, msg.data(), msg.size(), &priority.priority_);
+    if (auto ret = mq_receive(mqdes_, msg.data(), msg.size(), &priority);
         ret != -1) {
       auto size = static_cast<size_t>(ret);
       msg.resize(size);
@@ -317,7 +315,6 @@ class MessageQueue {
 
 template <>
 struct std::formatter<message_queue::MessageQueue::Priority>
-    : std::formatter<std::decay_t<
-          decltype(message_queue::MessageQueue::Priority::DEFAULT)>> {};
+    : std::formatter<message_queue::MessageQueue::Priority::underlying_type> {};
 
 using namespace message_queue;  // if main.cpp is not to be modified
