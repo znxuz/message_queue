@@ -205,6 +205,62 @@ TEST_F(MessageQueueTest, ProducerConsumer) {
   auto c = std::jthread{consumer, mq.name()};
 }
 
+TEST(Concept, ByteSequenceTest) {
+  // copied from MessageQueue
+  static constexpr auto get_ptr_and_size =
+      [](const detail::ByteSequence auto& sequence) static {
+        using sequence_type = std::decay_t<decltype(sequence)>;
+
+        if constexpr (requires { requires detail::StlSequence<sequence_type>; })
+          return std::pair{sequence.data(), sequence.size()};
+        else
+          return std::pair{sequence, std::strlen(sequence)};
+      };
+
+  auto check = [](const detail::ByteSequence auto& sequence) static {
+    using sequence_type = std::decay_t<decltype(sequence)>;
+    const auto [data, size] = get_ptr_and_size(sequence);
+
+    if constexpr (requires { requires detail::StlSequence<sequence_type>; }) {
+      EXPECT_EQ(data, sequence.data());
+      EXPECT_EQ(size, sequence.size());
+    } else {
+      EXPECT_EQ(data, sequence);
+      EXPECT_EQ(size, std::strlen(sequence));
+    }
+  };
+
+  check(std::vector<int8_t>{1, 2, 3});
+  check(std::vector<uint8_t>{1, 2, 3});
+  check(std::vector<char>{1, 2, 3});
+  check(std::vector<unsigned char>{1, 2, 3});
+  check(std::array<int8_t, 3>{1, 2, 3});
+  check(std::array<uint8_t, 3>{1, 2, 3});
+  check(std::array<char, 3>{'a', 'b', 'c'});
+  check(std::array<unsigned char, 3>{'a', 'b', 'c'});
+  check(std::span{"hello"sv});
+  // check(std::deque<char>{}); // not as continuous mem
+  // check(std::set<char>{});
+  check("hello"s);
+  check("hello"sv);
+
+  check("hello");  // null-terminated char arr[] by default
+  const char char_arr[] = {'a', 'b', 'c', '\0'};
+  check(char_arr);
+  const char* char_ptr = "hello";
+  check(char_ptr);
+  check(std::span{char_ptr, 2}); // if ptr/arr isn't null-terminated
+
+  const uint8_t arr[] = {1, 2, '\0', 4};
+  const uint8_t* ptr = arr;
+  // compile error, as it should be
+  // check(arr);
+  // check(ptr);
+  auto sp = std::span{arr};
+  EXPECT_EQ(sp.size(), sizeof(arr));
+  check(sp);
+}
+
 TEST(MessageQueueBuilder, TestBuilder) {
   auto mode = MqMode::BLOCKING;
   auto type = MqType::RECEIVER;

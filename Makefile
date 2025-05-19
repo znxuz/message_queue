@@ -34,6 +34,12 @@ rerun:
 	$(MAKE) clean
 	$(MAKE) run
 
+test:
+	cd tests && $(MAKE) test
+
+retest:
+	cd tests && $(MAKE) retest
+
 debug: CFLAGS += -g -DDEBUG=1 -D_GLIBCXX_DEBUG=1
 debug: fclean all
 

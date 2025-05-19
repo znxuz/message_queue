@@ -11,7 +11,6 @@
 #include <expected>
 #include <format>
 #include <print>
-#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
@@ -39,12 +38,20 @@ template <typename T>
 concept Byte = sizeof(T) == 1 && std::is_integral_v<T>;
 
 template <typename C>
-concept ByteContainer = requires(C c) {
-  requires Byte<std::decay_t<decltype(c[0])>>;
-  c.data();
-  c.size();
+concept StlSequence = requires(C c) {
   { c.begin() } -> std::contiguous_iterator;
   { c.end() } -> std::contiguous_iterator;
+  requires std::is_pointer_v<decltype(c.data())>;
+  c.size();
+};
+
+// Accepted are stl-containers and null-terminated char ptrs/arrays
+template <typename C>
+concept ByteSequence = requires(C c) {
+  requires Byte<std::decay_t<decltype(c[0])>>;
+  requires StlSequence<C> ||
+               (std::is_pointer_v<std::decay_t<C>> &&
+                std::is_same_v<std::decay_t<decltype(c[0])>, char>);
 };
 };  // namespace detail
 
@@ -145,19 +152,13 @@ class MessageQueue {
         .value();
   }
 
-  auto send(const detail::ByteContainer auto& msg,
+  auto send(const detail::ByteSequence auto& sequence,
             Priority priority = Priority::DEFAULT)
       -> std::expected<std::monostate, detail::MqError> {
-    if (mq_send(mqdes_, std::bit_cast<const char*>(msg.data()), msg.size(),
-                priority))
+    const auto [ptr, size] = get_ptr_and_size(sequence);
+    if (mq_send(mqdes_, reinterpret_cast<const char*>(ptr), size, priority))
       return std::unexpected{parse_err(Operation::Send)};
     return {};
-  }
-
-  // for null-terminated arrays
-  auto send(const detail::Byte auto* msg,
-            Priority priority = Priority::DEFAULT) {
-    return send(std::span(msg, strlen(msg)), priority);
   }
 
   auto receive() -> std::expected<Message, detail::MqError> {
@@ -260,6 +261,16 @@ class MessageQueue {
       throw std::invalid_argument("invalid mq name");
 
     return name;
+  }
+
+  static constexpr auto get_ptr_and_size(
+      const detail::ByteSequence auto& sequence) {
+    using sequence_type = std::decay_t<decltype(sequence)>;
+
+    if constexpr (requires { requires detail::StlSequence<sequence_type>; })
+      return std::pair{sequence.data(), sequence.size()};
+    else
+      return std::pair{sequence, std::strlen(sequence)};
   }
 
   static auto parse_err(Operation op) -> detail::MqError {
