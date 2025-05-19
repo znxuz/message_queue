@@ -2,6 +2,7 @@
 #include <mqueue.h>
 
 #include <bit>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -11,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 #include "../message_queue.hpp"
 
@@ -218,6 +220,26 @@ TEST_F(MessageQueueTest, ProducerConsumer) {
   auto c = std::jthread{consumer, mq.name()};
 }
 
+template <typename D>
+  requires std::chrono::__is_duration_v<D>
+static auto duration_to_sec_nanosec(D duration)
+    -> std::pair<std::chrono::seconds, std::chrono::nanoseconds> {
+  using namespace std::chrono;
+  return {duration_cast<seconds>(duration),
+          duration_cast<nanoseconds>(duration)};
+}
+
+TEST(Concept, DurationTest) {
+  using namespace std::chrono;
+  auto d1 = duration<size_t, std::ratio<1, 100>>{2};  // 20ms
+  auto d2 = duration<size_t, std::ratio<10, 1>>{20};  // 200s
+  EXPECT_EQ(std::make_pair(seconds{0}, nanoseconds{20 * 1000 * 1000}),
+            duration_to_sec_nanosec(d1));
+  EXPECT_EQ(
+      std::make_pair(seconds{200}, nanoseconds{200uz * 1000 * 1000 * 1000}),
+      duration_to_sec_nanosec(d2));
+}
+
 TEST(Concept, ByteSequenceTest) {
   // copied from MessageQueue
   static constexpr auto get_ptr_and_size =
@@ -225,9 +247,9 @@ TEST(Concept, ByteSequenceTest) {
         using sequence_type = std::decay_t<decltype(sequence)>;
 
         if constexpr (requires { requires detail::StlSequence<sequence_type>; })
-          return std::pair{sequence.data(), sequence.size()};
+          return std::make_pair(sequence.data(), sequence.size());
         else
-          return std::pair{sequence, std::strlen(sequence)};
+          return std::make_pair(sequence, std::strlen(sequence));
       };
 
   auto check = [](const detail::ByteSequence auto& sequence) static {

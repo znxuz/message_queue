@@ -1,8 +1,9 @@
-# todos
+# Run
 
-- time-based api
+- `make run` to compile and run `main.cpp`
+- `make test` to run the tests from the `tests/` directory
 
-# manpage notes
+# Manpage Notes
 
 - POSIX-confirm name `std::string_view` sanity check:
 	- always start with forward slash & none forward slash afterwards
@@ -23,8 +24,7 @@
 	- [X] respect `errno` and make them human-readable: -> `man mq_open:ERRORS`
 	- [X] `(mqd_t)-1` on error -> throw in ctor
 - `mq_send()`:
-	- [ ] overloads with `const T&`, `T&&`, maybe analog `emplace_back()` too?
-	- [ ] overloads with optional timeout -> `std::chrono`
+	- [X] overload with timeout -> `std::chrono::duration`
 	- `mq_send()` takes `const char*`: `std::bit_cast`
 	- priority:
 		- range from `0(low)` to `$(getconf MQ_PRIO_MAX)` or
@@ -35,7 +35,7 @@
 - `mq_receive()`:
 	- [X] should return (msg, priority) -> `std::expected<std::pair<...>, E>`
 	- [X] RVO via `Message` inner struct
-	- [ ] overloads with optional timeout -> `std::chrono`
+	- [X] overload with timeout -> `std::chrono::duration`
 	- [X] respect `errno` -> `man mq_receive:ERRORS`
 - `mq_notify()`: notify upon msg arrival on a **previously empty** queue:
 	- `SIGEV_NONE`: only register, no notification

@@ -2,10 +2,12 @@
 
 #include <fcntl.h>
 #include <mqueue.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cassert>
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <expected>
@@ -160,6 +162,24 @@ class MessageQueue {
     return {};
   }
 
+  template <typename D>
+    requires std::chrono::__is_duration_v<D>
+  auto send(const detail::ByteSequence auto& sequence, Priority priority,
+            D duration) -> std::expected<std::monostate, detail::MqError> {
+    using namespace std::chrono;
+
+    auto now = high_resolution_clock::now().time_since_epoch();
+    auto sec = (now + duration_cast<seconds>(duration)).count();
+    auto nanosec = (now + duration_cast<nanoseconds>(duration)).count();
+    const struct timespec time = {sec, nanosec};
+
+    const auto [ptr, size] = get_ptr_and_size(sequence);
+    if (mq_timedsend(mqdes_, reinterpret_cast<const char*>(ptr), size, priority,
+                     &time))
+      return std::unexpected{parse_err(Operation::Send)};
+    return {};
+  }
+
   auto receive() -> std::expected<Message, detail::MqError> {
     unsigned int priority;
 
@@ -167,6 +187,31 @@ class MessageQueue {
     // reserve() doesn't change the size
     auto msg = std::string(max_msgsize(), '\0');
     if (auto ret = mq_receive(mqdes_, msg.data(), msg.size(), &priority);
+        ret != -1) {
+      auto size = static_cast<size_t>(ret);
+      msg.resize(size);
+      msg.shrink_to_fit();
+      assert(msg.size() == size);
+      return Message{std::move(msg), priority};
+    }
+    return std::unexpected{parse_err(Operation::Receive)};
+  }
+
+  template <typename D>
+    requires std::chrono::__is_duration_v<D>
+  auto receive(D duration) -> std::expected<Message, detail::MqError> {
+    using namespace std::chrono;
+
+    unsigned int priority;
+
+    auto now = high_resolution_clock::now().time_since_epoch();
+    auto sec = (now + duration_cast<seconds>(duration)).count();
+    auto nanosec = (now + duration_cast<nanoseconds>(duration)).count();
+    const struct timespec time = {sec, nanosec};
+    auto msg = std::string(max_msgsize(), '\0');
+
+    if (auto ret =
+            mq_timedreceive(mqdes_, msg.data(), msg.size(), &priority, &time);
         ret != -1) {
       auto size = static_cast<size_t>(ret);
       msg.resize(size);
@@ -266,9 +311,9 @@ class MessageQueue {
     using sequence_type = std::decay_t<decltype(sequence)>;
 
     if constexpr (requires { requires detail::StlSequence<sequence_type>; })
-      return std::pair{sequence.data(), sequence.size()};
+      return std::make_pair(sequence.data(), sequence.size());
     else
-      return std::pair{sequence, std::strlen(sequence)};
+      return std::make_pair(sequence, std::strlen(sequence));
   }
 
   static auto parse_err(Operation op) -> detail::MqError {
@@ -288,16 +333,16 @@ class MessageQueue {
          {{EAGAIN, "queue is full"},
           {EBADF, "invalid mq fd, or the queue is not opened for sending"},
           {EINTR, "interrupted by a single handler"},
-          {EINVAL, "TODO: not implemented"},
+          {EINVAL, "invalid duration: nanosecond exceeds the max. limit"},
           {EMSGSIZE, "contained message length greater than max. size"},
-          {ETIMEDOUT, "TODO: not implemented"}}},
+          {ETIMEDOUT, "duration timed out"}}},
         {Receive,
          {{EAGAIN, "queue is empty"},
           {EBADF, "invalid mq fd, or the queue is not opened for receiving"},
           {EINTR, "interrupted by a single handler"},
-          {EINVAL, "TODO: time-based api not implemented"},
+          {EINVAL, "invalid duration: nanosecond exceeds the max. limit"},
           {EMSGSIZE, "given message length less than max. size"},
-          {ETIMEDOUT, "TODO: time-based api not implemented"}}},
+          {ETIMEDOUT, "duration timed out"}}},
         {GetAttr,
          {{EBADF, "invalid mq fd"},
           {EINVAL, "mq_flags contains more than O_NONBLOCK"}}},
