@@ -13,7 +13,7 @@ CFLAGS := -x $(LANG) -std=$(STD) $(WARNINGS) -O0 -I$(CURDIR)
 LIB :=
 SAN := -fsanitize=address,undefined
 
-src := $(shell find $(SRC_DIR) -type f -name "*.cpp")
+src := $(filter-out ./tests/tests.cpp, $(shell find $(SRC_DIR) -type f -name "*.cpp"))
 obj := $(addprefix $(BUILD_DIR)/, $(src:.cpp=.o))
 NAME := $(BUILD_DIR)/a.out
 
@@ -33,6 +33,12 @@ run: $(NAME)
 rerun:
 	$(MAKE) clean
 	$(MAKE) run
+
+test:
+	cd tests && $(MAKE) test
+
+retest:
+	cd tests && $(MAKE) retest
 
 debug: CFLAGS += -g -DDEBUG=1 -D_GLIBCXX_DEBUG=1
 debug: fclean all
