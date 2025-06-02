@@ -358,5 +358,3 @@ class MessageQueue {
 template <>
 struct std::formatter<message_queue::MessageQueue::Priority>
     : std::formatter<message_queue::MessageQueue::Priority::underlying_type> {};
-
-using namespace message_queue;  // if main.cpp is not to be modified
