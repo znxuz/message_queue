@@ -1,71 +1,38 @@
-# Run
+# MQ-Wrapper
 
-- `make run` to compile and run `main.cpp`
-- `make test` to run the tests from the `tests/` directory
-- tested with `gcc (GCC) 15.1.1 20250425`
+A C++23 header-only, type-safe and ergonomic abstraction over the Linux message
+queue APIs.
 
-# Manpage Notes
+# Features
 
-- POSIX-confirm name `std::string_view` sanity check:
-	- always start with forward slash & none forward slash afterwards
-	- null-terminated string to `getconf NAME_MAX /` (filesystem-specific)
-- `struct mq_attr`:
-	- `mq_flags`: (ignored for `mq_open()`) flags set for the queue:
-		- only `O_NONBLOCK`: non-blocking for `mq_receive()` or `mq_send()`
-	- `mq_maxmsg`: max. # of msgs stored in the queue; **must be non-zero**
-	- `mq_msgsize`: max. size (bytes) of each msg; **must be non-zero**
-	-  `mq_curmsgs`: # of msgs currently in the queue
-- `mq_open()`:
-	- always bidirectional based on the API; attach if exists
-	- `mq_attr`:
-		- `mq_flags`: ignored
-		- `mq_maxmsg`: defaulted to linux kernel config /proc
-		- `mq_msgsize`: defaulted to linux kernel config /proc
-		- `mq_curmsgs`: ignored
-	- [X] respect `errno` and make them human-readable: -> `man mq_open:ERRORS`
-	- [X] `(mqd_t)-1` on error -> throw in ctor
-- `mq_send()`:
-    - overload via `concept`
-	- [X] overload with timeout -> `std::chrono::duration`
-	- priority:
-		- range from `0(low)` to `$(getconf MQ_PRIO_MAX)` or
-		  `sysconf(_SC_MQ_PRIO_MAX)-1(high)`: 32768 on Linux, 31 with POSIX.1
-		- [X] as nested/inner class with bound checking
-		- [X] serialize to `cout`: impl. conversion
-	- [X] respect `errno` -> `man mq_send:ERRORS`
-- `mq_receive()`:
-	- [X] should return (msg, priority) -> `std::expected<std::pair<...>, E>`
-	- [X] RVO via `Message` inner struct
-	- [X] overload with timeout -> `std::chrono::duration`
-	- [X] respect `errno` -> `man mq_receive:ERRORS`
-- `mq_notify()`: notify upon msg arrival on a **previously empty** queue:
-	- `SIGEV_NONE`: only register, no notification
-	- `SIGEV_SIGNAL`: sending the specified signal
-	- `SIGEV_THREAD`: invoke `sigev_notify_function` TODO template queue size
-	- only one process can register from a msg queue **once** per `mq_notify()`
-	- unregister with `(struct sigevent*)NULL`
-	- no notification if `mq_receive` is waiting on new msg
-	- errno and example: `man mq_notify`
-    - not yet implemented
-- `mq_close()`:
-	- just close after use; no delete
-	- or the notification is removed if exists
-- `mq_unlink()`:
-	- close and delete -> call unlink in dtor when supplied with `O_CREAT`?
-- `mq_getattr()`: get the attributes of a msg queue
-- `mq_setattr()`: only `mq_flags` i.e. `O_NONBLOCK` can be set
+- blocking/non-blocking, uni- or bidirectional
+- optionally time-based send/receive
+- compile-time byte buffer type checking via `concept`
+- functional error handling via `std::expected`
+- strongly typed message priority with compile-time bound-checked values
+- human-readable error diagnostics mapped from `errno`
+- move-only semantic
 
-# tests
+# Usage Example
 
-- [X] test bidirectional
-- [X] test non-padded/padded/polymorphic objects with inherited paddings
-- [X] test with producer/consumer threads
-- [X] test priority comparisons
+```cpp
+#include "message_queue.hpp"
+using namespace message_queue;
 
-# unix tools
+auto mq = MessageQueue{"/my_queue"};
+// auto mq = MessageQueue{"/myqueue", MqMode::NON_BLOCKING, MqType::BIDIRECTIONAL};
 
-- `ipcs -q`
-- `cat /dev/mqueue/<queue_name>`: size in bytes (not in messages)
-- `/proc/sys/fs/mqueue/`: config dir
+auto result = mq.send("hello", MessageQueue::Priority{10});
 
-[![wakatime](https://wakatime.com/badge/user/77eda5cb-f41d-45da-a208-715b0faa4269/project/2fdc66e6-17db-4272-a608-d1ae0e7bdf1e.svg)](https://wakatime.com/@zijian/projects/mqkgvqvzso)
+const auto& [contents, priority] = mq.receive().value();
+```
+
+# Key API
+
+- `mq.send(data, priority [, timeout])` — send bytes/buffer with optional timeout
+- `mq.receive([timeout])` — retrieve message and its priority
+- `MessageQueue::unlink(name)` — remove message queue from system
+- `MessageQueue::Builder` — construction/reset APIs mapping constructor
+  exception to `std::expected`
+
+Tested on Arch Linux (btw.)
